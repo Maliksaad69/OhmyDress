@@ -15,6 +15,146 @@ function formatPrice(value: number) {
   );
 }
 
+const FIELD_ELEMENT_IDS: Record<string, string> = {
+  amount: "montant-field",
+  orderReference: "order-ref",
+  tiktokUsername: "tiktok-user",
+  email: "email-addr",
+  firstName: "first-name",
+  lastName: "last-name",
+  country: "country",
+  address1: "street-address",
+  zip: "postal-code",
+  city: "city",
+  phone: "phone-number",
+  terms: "terms-check",
+};
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p
+      id={id}
+      className="mt-1.5 text-xs text-red-600 flex items-center gap-1.5 font-medium animate-fade-in"
+      role="alert"
+    >
+      <svg
+        className="w-3.5 h-3.5 shrink-0 text-red-500"
+        fill="currentColor"
+        viewBox="0 0 20 20"
+        aria-hidden="true"
+      >
+        <path
+          fillRule="evenodd"
+          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+          clipRule="evenodd"
+        />
+      </svg>
+      <span>{message}</span>
+    </p>
+  );
+}
+
+function inputErrorClass(hasError: boolean) {
+  return hasError
+    ? "border-red-400 bg-red-50/20 focus:border-red-500 focus:ring-2 focus:ring-red-200/50"
+    : "border-brand-border/80 focus:border-brand-gold";
+}
+
+function validateField(
+  name: string,
+  value: string | boolean,
+  targetCountry = "FR"
+): string | null {
+  switch (name) {
+    case "amount": {
+      const clean = String(value).trim().replace(",", ".");
+      if (!clean) return "Veuillez indiquer le montant convenu à régler au vendeur.";
+      const parsed = parseFloat(clean);
+      if (isNaN(parsed) || parsed <= 0) return "Le montant doit être supérieur à 0 €.";
+      if (parsed < 0.5) return "Le montant minimum pour un règlement Stripe est de 0,50 €.";
+      if (parsed > 10000) return "Le montant ne peut pas excéder 10 000 €.";
+      return null;
+    }
+    case "orderReference": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez indiquer la référence de vente de votre commande.";
+      return null;
+    }
+    case "tiktokUsername": {
+      const trimmed = String(value).trim().replace(/^@/, "");
+      if (!trimmed) return "Veuillez renseigner votre pseudo TikTok utilisé pendant le live.";
+      if (trimmed.length < 2) return "Le pseudo TikTok doit comporter au moins 2 caractères.";
+      return null;
+    }
+    case "email": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre adresse e-mail pour recevoir le reçu.";
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!emailRegex.test(trimmed)) {
+        return "Veuillez renseigner une adresse e-mail valide (ex : nom@domaine.fr).";
+      }
+      return null;
+    }
+    case "firstName": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre prénom.";
+      if (trimmed.length < 2) return "Le prénom doit comporter au moins 2 caractères.";
+      return null;
+    }
+    case "lastName": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre nom.";
+      if (trimmed.length < 2) return "Le nom doit comporter au moins 2 caractères.";
+      return null;
+    }
+    case "country": {
+      if (!String(value).trim()) return "Veuillez sélectionner un pays de livraison.";
+      return null;
+    }
+    case "address1": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre adresse de livraison.";
+      if (trimmed.length < 4) return "Veuillez préciser le numéro et le nom de voie.";
+      return null;
+    }
+    case "zip": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre code postal.";
+      if (targetCountry === "FR") {
+        if (!/^\d{5}$/.test(trimmed)) {
+          return "Le code postal français doit être composé de 5 chiffres (ex : 75008).";
+        }
+      } else if (trimmed.length < 2 || trimmed.length > 10) {
+        return "Veuillez renseigner un code postal valide.";
+      }
+      return null;
+    }
+    case "city": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez renseigner votre ville.";
+      if (trimmed.length < 2) return "Le nom de la ville doit comporter au moins 2 caractères.";
+      return null;
+    }
+    case "phone": {
+      const trimmed = String(value).trim();
+      if (!trimmed) return "Veuillez indiquer un numéro de téléphone portable pour le suivi SMS.";
+      const digits = trimmed.replace(/\D/g, "");
+      const validChars = /^[0-9+\s\-().]{8,20}$/;
+      if (!validChars.test(trimmed) || digits.length < 8) {
+        return "Veuillez renseigner un numéro de téléphone valide (ex : 06 12 34 56 78).";
+      }
+      return null;
+    }
+    case "terms": {
+      if (!value) return "Veuillez accepter les conditions générales de vente pour continuer.";
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
 function CheckoutFormContent() {
   const searchParams = useSearchParams();
   const wasCanceled = searchParams.get("canceled") === "true";
@@ -35,6 +175,10 @@ function CheckoutFormContent() {
   const [phone, setPhone] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(true);
 
+  // Validation State
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
   // UI status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -49,25 +193,80 @@ function CheckoutFormContent() {
 
   const quickAmounts = [25, 35, 50, 75, 100, 150];
 
+  const handleFieldChange = (name: string, val: string | boolean, currentCountry = country) => {
+    if (errors[name]) {
+      const err = validateField(name, val, currentCountry);
+      setErrors((prev) => {
+        const next = { ...prev };
+        if (err) next[name] = err;
+        else delete next[name];
+        return next;
+      });
+    }
+  };
+
+  const handleFieldBlur = (name: string, val: string | boolean, currentCountry = country) => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    const err = validateField(name, val, currentCountry);
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (err) next[name] = err;
+      else delete next[name];
+      return next;
+    });
+  };
+
   const handlePay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage(null);
 
-    if (subtotal <= 0) {
-      setErrorMessage("Veuillez saisir le montant convenu pour votre achat (supérieur à 0 €).");
-      const montantInput = document.getElementById("montant-field");
-      montantInput?.scrollIntoView({ behavior: "smooth", block: "center" });
-      montantInput?.focus();
-      return;
+    const validationMap: Record<string, string | null> = {
+      amount: validateField("amount", amount),
+      orderReference: validateField("orderReference", orderReference),
+      tiktokUsername: validateField("tiktokUsername", tiktokUsername),
+      email: validateField("email", email),
+      firstName: validateField("firstName", firstName),
+      lastName: validateField("lastName", lastName),
+      country: validateField("country", country),
+      address1: validateField("address1", address1),
+      zip: validateField("zip", zip, country),
+      city: validateField("city", city),
+      phone: validateField("phone", phone),
+      terms: validateField("terms", termsAccepted),
+    };
+
+    const newErrors: Record<string, string> = {};
+    for (const [key, err] of Object.entries(validationMap)) {
+      if (err) newErrors[key] = err;
     }
 
-    if (subtotal < 0.5) {
-      setErrorMessage("Le montant minimum pour un règlement Stripe est de 0,50 €.");
-      return;
-    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setTouched({
+        amount: true,
+        orderReference: true,
+        tiktokUsername: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        country: true,
+        address1: true,
+        zip: true,
+        city: true,
+        phone: true,
+        terms: true,
+      });
 
-    if (!termsAccepted) {
-      setErrorMessage("Veuillez accepter les conditions générales de vente pour continuer.");
+      const firstErrorKey = Object.keys(FIELD_ELEMENT_IDS).find((key) => newErrors[key]);
+      if (firstErrorKey) {
+        const el = document.getElementById(FIELD_ELEMENT_IDS[firstErrorKey]);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        el?.focus();
+      }
+
+      setErrorMessage(
+        "Veuillez remplir correctement tous les champs obligatoires mis en évidence ci-dessous pour finaliser votre commande."
+      );
       return;
     }
 
@@ -82,19 +281,19 @@ function CheckoutFormContent() {
         body: JSON.stringify({
           amount: subtotal,
           shippingCost: SHIPPING_COST,
-          orderReference,
-          articleName,
-          tiktokUsername,
-          email,
+          orderReference: orderReference.trim(),
+          articleName: articleName.trim(),
+          tiktokUsername: tiktokUsername.trim(),
+          email: email.trim(),
           customer: {
-            firstName,
-            lastName,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
             country,
-            address1,
-            address2,
-            zip,
-            city,
-            phone,
+            address1: address1.trim(),
+            address2: address2.trim(),
+            zip: zip.trim(),
+            city: city.trim(),
+            phone: phone.trim(),
           },
         }),
       });
@@ -207,7 +406,7 @@ function CheckoutFormContent() {
         </nav>
 
         {/* Grid: Left side Form & Right side Summary */}
-        <form onSubmit={handlePay} className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <form onSubmit={handlePay} noValidate className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           {/* ======================= LEFT COLUMN: Forms ======================= */}
           <div className="lg:col-span-7 space-y-8">
             {/* Section 1: Montant personnalisé & référence */}
@@ -246,7 +445,9 @@ function CheckoutFormContent() {
 
                   <div className="relative rounded-xl shadow-sm">
                     <input
-                      className="lux-input block w-full rounded-xl py-4 pl-4 pr-12 text-2xl font-serif font-bold text-brand-charcoal placeholder-gray-400 focus:border-brand-gold"
+                      className={`lux-input block w-full rounded-xl py-4 pl-4 pr-12 text-2xl font-serif font-bold text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                        Boolean(errors.amount)
+                      )}`}
                       id="montant-field"
                       min="0.50"
                       name="amount"
@@ -256,7 +457,13 @@ function CheckoutFormContent() {
                       type="text"
                       inputMode="decimal"
                       value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
+                      aria-invalid={Boolean(errors.amount)}
+                      aria-describedby={errors.amount ? "amount-error" : undefined}
+                      onChange={(event) => {
+                        setAmount(event.target.value);
+                        handleFieldChange("amount", event.target.value);
+                      }}
+                      onBlur={() => handleFieldBlur("amount", amount)}
                     />
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
                       <span className="text-xl font-serif font-bold text-brand-charcoal">
@@ -264,6 +471,7 @@ function CheckoutFormContent() {
                       </span>
                     </div>
                   </div>
+                  <FieldError id="amount-error" message={errors.amount} />
 
                   {/* Quick Preset Buttons */}
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -274,7 +482,11 @@ function CheckoutFormContent() {
                       <button
                         key={preset}
                         type="button"
-                        onClick={() => setAmount(preset.toFixed(2))}
+                        onClick={() => {
+                          const val = preset.toFixed(2);
+                          setAmount(val);
+                          handleFieldChange("amount", val);
+                        }}
                         className={`text-xs px-3 py-1 rounded-lg border transition-all ${
                           subtotal === preset
                             ? "bg-brand-charcoal text-white border-brand-charcoal font-semibold shadow-sm"
@@ -293,17 +505,26 @@ function CheckoutFormContent() {
                       className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                       htmlFor="order-ref"
                     >
-                      Référence de vente
+                      Référence de vente <span className="text-red-500">*</span>
                     </label>
                     <input
-                      className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 font-mono"
+                      className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 font-mono ${inputErrorClass(
+                        Boolean(errors.orderReference)
+                      )}`}
                       id="order-ref"
                       name="order_reference"
                       value={orderReference}
-                      onChange={(e) => setOrderReference(e.target.value)}
+                      aria-invalid={Boolean(errors.orderReference)}
+                      aria-describedby={errors.orderReference ? "order-ref-error" : undefined}
+                      onChange={(e) => {
+                        setOrderReference(e.target.value);
+                        handleFieldChange("orderReference", e.target.value);
+                      }}
+                      onBlur={() => handleFieldBlur("orderReference", orderReference)}
                       placeholder="OMD-LIVE-4982"
                       type="text"
                     />
+                    <FieldError id="order-ref-error" message={errors.orderReference} />
                   </div>
                   <div>
                     <label
@@ -317,15 +538,25 @@ function CheckoutFormContent() {
                         @
                       </div>
                       <input
-                        className="lux-input block w-full rounded-xl py-3 pl-9 pr-4 text-sm text-brand-charcoal placeholder-gray-400"
+                        className={`lux-input block w-full rounded-xl py-3 pl-9 pr-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                          Boolean(errors.tiktokUsername)
+                        )}`}
                         id="tiktok-user"
                         name="tiktok_username"
+                        autoComplete="username"
                         value={tiktokUsername}
-                        onChange={(e) => setTiktokUsername(e.target.value)}
+                        aria-invalid={Boolean(errors.tiktokUsername)}
+                        aria-describedby={errors.tiktokUsername ? "tiktok-user-error" : undefined}
+                        onChange={(e) => {
+                          setTiktokUsername(e.target.value);
+                          handleFieldChange("tiktokUsername", e.target.value);
+                        }}
+                        onBlur={() => handleFieldBlur("tiktokUsername", tiktokUsername)}
                         placeholder="votre_pseudo"
                         type="text"
                       />
                     </div>
+                    <FieldError id="tiktok-user-error" message={errors.tiktokUsername} />
                   </div>
                 </div>
 
@@ -340,7 +571,7 @@ function CheckoutFormContent() {
                     </span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 border-brand-border/80 focus:border-brand-gold"
                     id="order-item"
                     name="article_name"
                     value={articleName}
@@ -372,69 +603,123 @@ function CheckoutFormContent() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                 <div className="md:col-span-2">
-                  <label
-                    className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                    htmlFor="email-addr"
-                  >
-                    E-mail pour le reçu de paiement
-                  </label>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <label
+                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal"
+                      htmlFor="email-addr"
+                    >
+                      E-mail pour le reçu de paiement <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-brand-muted">
+                      Pour confirmation et reçu
+                    </span>
+                  </div>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.email)
+                    )}`}
                     id="email-addr"
                     name="email"
+                    autoComplete="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    aria-invalid={Boolean(errors.email)}
+                    aria-describedby={errors.email ? "email-error" : undefined}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      handleFieldChange("email", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("email", email)}
                     placeholder="nom@exemple.com"
                     type="email"
                   />
+                  <FieldError id="email-error" message={errors.email} />
                 </div>
                 <div>
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="first-name"
                   >
-                    Prénom
+                    Prénom <span className="text-red-500">*</span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.firstName)
+                    )}`}
                     id="first-name"
                     name="firstname"
+                    autoComplete="given-name"
                     value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    aria-invalid={Boolean(errors.firstName)}
+                    aria-describedby={errors.firstName ? "first-name-error" : undefined}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      handleFieldChange("firstName", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("firstName", firstName)}
                     placeholder="Camille"
                     type="text"
                   />
+                  <FieldError id="first-name-error" message={errors.firstName} />
                 </div>
                 <div>
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="last-name"
                   >
-                    Nom
+                    Nom <span className="text-red-500">*</span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.lastName)
+                    )}`}
                     id="last-name"
                     name="lastname"
+                    autoComplete="family-name"
                     value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    aria-invalid={Boolean(errors.lastName)}
+                    aria-describedby={errors.lastName ? "last-name-error" : undefined}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      handleFieldChange("lastName", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("lastName", lastName)}
                     placeholder="Laurent"
                     type="text"
                   />
+                  <FieldError id="last-name-error" message={errors.lastName} />
                 </div>
                 <div className="md:col-span-2">
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="country"
                   >
-                    Pays
+                    Pays <span className="text-red-500">*</span>
                   </label>
                   <select
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal cursor-pointer"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal cursor-pointer ${inputErrorClass(
+                      Boolean(errors.country)
+                    )}`}
                     id="country"
                     name="country"
+                    autoComplete="country"
                     value={country}
-                    onChange={(e) => setCountry(e.target.value)}
+                    aria-invalid={Boolean(errors.country)}
+                    aria-describedby={errors.country ? "country-error" : undefined}
+                    onChange={(e) => {
+                      const nextCountry = e.target.value;
+                      setCountry(nextCountry);
+                      handleFieldChange("country", nextCountry);
+                      if (errors.zip || touched.zip) {
+                        const err = validateField("zip", zip, nextCountry);
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          if (err) next.zip = err;
+                          else delete next.zip;
+                          return next;
+                        });
+                      }
+                    }}
+                    onBlur={() => handleFieldBlur("country", country)}
                   >
                     <option value="FR">France métropolitaine</option>
                     <option value="BE">Belgique</option>
@@ -445,23 +730,34 @@ function CheckoutFormContent() {
                     <option value="GB">Royaume-Uni</option>
                     <option value="US">États-Unis</option>
                   </select>
+                  <FieldError id="country-error" message={errors.country} />
                 </div>
                 <div className="md:col-span-2">
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="street-address"
                   >
-                    Adresse de livraison
+                    Adresse de livraison <span className="text-red-500">*</span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.address1)
+                    )}`}
                     id="street-address"
                     name="address1"
+                    autoComplete="street-address"
                     value={address1}
-                    onChange={(e) => setAddress1(e.target.value)}
+                    aria-invalid={Boolean(errors.address1)}
+                    aria-describedby={errors.address1 ? "street-address-error" : undefined}
+                    onChange={(e) => {
+                      setAddress1(e.target.value);
+                      handleFieldChange("address1", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("address1", address1)}
                     placeholder="N° et nom de rue"
                     type="text"
                   />
+                  <FieldError id="street-address-error" message={errors.address1} />
                 </div>
                 <div className="md:col-span-2">
                   <label
@@ -474,9 +770,10 @@ function CheckoutFormContent() {
                     </span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 border-brand-border/80 focus:border-brand-gold"
                     id="address2"
                     name="address2"
+                    autoComplete="address-line2"
                     value={address2}
                     onChange={(e) => setAddress2(e.target.value)}
                     placeholder="Bâtiment, étage, interphone…"
@@ -488,51 +785,86 @@ function CheckoutFormContent() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="postal-code"
                   >
-                    Code postal
+                    Code postal <span className="text-red-500">*</span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.zip)
+                    )}`}
                     id="postal-code"
                     name="zip"
+                    autoComplete="postal-code"
                     value={zip}
-                    onChange={(e) => setZip(e.target.value)}
+                    aria-invalid={Boolean(errors.zip)}
+                    aria-describedby={errors.zip ? "postal-code-error" : undefined}
+                    onChange={(e) => {
+                      setZip(e.target.value);
+                      handleFieldChange("zip", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("zip", zip)}
                     placeholder="75008"
                     type="text"
                   />
+                  <FieldError id="postal-code-error" message={errors.zip} />
                 </div>
                 <div>
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="city"
                   >
-                    Ville
+                    Ville <span className="text-red-500">*</span>
                   </label>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.city)
+                    )}`}
                     id="city"
                     name="city"
+                    autoComplete="address-level2"
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                    aria-invalid={Boolean(errors.city)}
+                    aria-describedby={errors.city ? "city-error" : undefined}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      handleFieldChange("city", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("city", city)}
                     placeholder="Paris"
                     type="text"
                   />
+                  <FieldError id="city-error" message={errors.city} />
                 </div>
                 <div className="md:col-span-2">
-                  <label
-                    className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                    htmlFor="phone-number"
-                  >
-                    Téléphone
-                  </label>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <label
+                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal"
+                      htmlFor="phone-number"
+                    >
+                      Téléphone portable <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-brand-muted">
+                      Pour l&apos;avis SMS de livraison
+                    </span>
+                  </div>
                   <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
+                    className={`lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 ${inputErrorClass(
+                      Boolean(errors.phone)
+                    )}`}
                     id="phone-number"
                     name="phone"
+                    autoComplete="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    aria-invalid={Boolean(errors.phone)}
+                    aria-describedby={errors.phone ? "phone-error" : undefined}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      handleFieldChange("phone", e.target.value);
+                    }}
+                    onBlur={() => handleFieldBlur("phone", phone)}
                     placeholder="06 12 34 56 78"
                     type="tel"
                   />
+                  <FieldError id="phone-error" message={errors.phone} />
                 </div>
               </div>
             </section>
@@ -656,11 +988,18 @@ function CheckoutFormContent() {
                   <label className="flex items-start gap-3 cursor-pointer select-none">
                     <input
                       checked={termsAccepted}
-                      onChange={(e) => setTermsAccepted(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-charcoal focus:ring-brand-gold custom-radio"
+                      onChange={(e) => {
+                        setTermsAccepted(e.target.checked);
+                        handleFieldChange("terms", e.target.checked);
+                      }}
+                      className={`mt-1 h-4 w-4 rounded border-gray-300 text-brand-charcoal focus:ring-brand-gold custom-radio ${
+                        errors.terms ? "ring-2 ring-red-400 border-red-500" : ""
+                      }`}
                       id="terms-check"
                       name="terms"
                       type="checkbox"
+                      aria-invalid={Boolean(errors.terms)}
+                      aria-describedby={errors.terms ? "terms-error" : undefined}
                     />
                     <span className="text-xs text-brand-muted leading-relaxed">
                       J&apos;accepte les{" "}
@@ -671,17 +1010,17 @@ function CheckoutFormContent() {
                       >
                         conditions générales de vente
                       </a>{" "}
-                      et confirme le montant convenu avec le vendeur.
+                      et confirme le montant convenu avec le vendeur. <span className="text-red-500">*</span>
                     </span>
                   </label>
+                  <FieldError id="terms-error" message={errors.terms} />
                 </div>
 
                 <div className="pt-2 sm:hidden">
                   <button
                     disabled={isSubmitting}
-                    onClick={handlePay}
                     className="w-full bg-[#1F1C1B] hover:bg-brand-gold disabled:bg-gray-400 text-white font-medium text-sm tracking-widest uppercase py-4 px-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer"
-                    type="button"
+                    type="submit"
                   >
                     {isSubmitting ? (
                       <>
@@ -754,10 +1093,9 @@ function CheckoutFormContent() {
               <div className="mt-4">
                 <button
                   disabled={isSubmitting}
-                  onClick={handlePay}
                   className="w-full bg-[#1F1C1B] hover:bg-brand-gold disabled:bg-gray-400 text-white font-medium text-sm sm:text-base tracking-widest uppercase py-4 px-6 rounded-xl shadow-lg transition-all duration-300 transform active:scale-[0.99] flex items-center justify-center gap-3 group cursor-pointer"
                   id="btn-submit-payment"
-                  type="button"
+                  type="submit"
                 >
                   {isSubmitting ? (
                     <>
