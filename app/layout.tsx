@@ -27,6 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="fr"
+      data-scroll-behavior="smooth"
       className={`${cormorant.variable} ${montserrat.variable} scroll-smooth`}
     >
       <body className="font-sans text-brand-charcoal antialiased min-h-screen flex flex-col justify-between selection:bg-brand-gold selection:text-white">

@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 const SHIPPING_COST = 5.0;
 
@@ -14,18 +15,159 @@ function formatPrice(value: number) {
   );
 }
 
-export default function CheckoutForm() {
-  // Live amount agreed during the TikTok live — drives the order summary.
-  const [amount, setAmount] = useState("");
+function CheckoutFormContent() {
+  const searchParams = useSearchParams();
+  const wasCanceled = searchParams.get("canceled") === "true";
 
-  const subtotal = parseFloat(amount) || 0;
-  const total = subtotal + SHIPPING_COST;
-  const vat = (total * 0.2) / 1.2; // 20% TVA incluse
+  // Form State
+  const [amount, setAmount] = useState("");
+  const [orderReference, setOrderReference] = useState("OMD-LIVE-4982");
+  const [articleName, setArticleName] = useState("");
+  const [tiktokUsername, setTiktokUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [country, setCountry] = useState("FR");
+  const [address1, setAddress1] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [zip, setZip] = useState("");
+  const [city, setCity] = useState("");
+  const [phone, setPhone] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(true);
+
+  // UI status
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showCanceledAlert, setShowCanceledAlert] = useState(wasCanceled);
+
+  // Calculations
+  const cleanAmountString = amount.trim().replace(",", ".");
+  const parsedAmount = parseFloat(cleanAmountString);
+  const subtotal = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : 0;
+  const total = subtotal > 0 ? subtotal + SHIPPING_COST : 0;
+  const vat = total > 0 ? (total * 0.2) / 1.2 : 0;
+
+  const quickAmounts = [25, 35, 50, 75, 100, 150];
+
+  const handlePay = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMessage(null);
+
+    if (subtotal <= 0) {
+      setErrorMessage("Veuillez saisir le montant convenu pour votre achat (supérieur à 0 €).");
+      const montantInput = document.getElementById("montant-field");
+      montantInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+      montantInput?.focus();
+      return;
+    }
+
+    if (subtotal < 0.5) {
+      setErrorMessage("Le montant minimum pour un règlement Stripe est de 0,50 €.");
+      return;
+    }
+
+    if (!termsAccepted) {
+      setErrorMessage("Veuillez accepter les conditions générales de vente pour continuer.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: subtotal,
+          shippingCost: SHIPPING_COST,
+          orderReference,
+          articleName,
+          tiktokUsername,
+          email,
+          customer: {
+            firstName,
+            lastName,
+            country,
+            address1,
+            address2,
+            zip,
+            city,
+            phone,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Impossible d'initialiser le paiement.");
+      }
+
+      if (data.url) {
+        // Redirect to Stripe Checkout page
+        window.location.href = data.url;
+      } else {
+        throw new Error("L'URL de paiement Stripe n'a pas été renvoyée.");
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Une erreur inattendue est survenue. Veuillez vérifier votre connexion et réessayer.";
+      console.error("Erreur de paiement:", err);
+      setErrorMessage(message);
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <main className="flex-grow py-8 md:py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        {/* Bannière */}
+        {/* Canceled Banner Notification */}
+        {showCanceledAlert && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex items-center justify-between shadow-sm animate-fade-in">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <p className="font-semibold text-xs sm:text-sm">Session de paiement annulée</p>
+                <p className="text-xs text-amber-800">
+                  Votre paiement n&apos;a pas été débité. Vos informations sont conservées ci-dessous pour que vous puissiez réessayer.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowCanceledAlert(false)}
+              className="text-amber-700 hover:text-amber-950 text-xs font-semibold px-2 py-1 uppercase tracking-wider"
+              type="button"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
+        {/* Global Error Banner */}
+        {errorMessage && (
+          <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 flex items-start gap-3 shadow-sm animate-fade-in">
+            <svg className="w-5 h-5 text-red-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-semibold text-xs sm:text-sm">Attention</p>
+              <p className="text-xs text-red-700 mt-0.5">{errorMessage}</p>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="text-red-500 hover:text-red-800 text-xs font-bold"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Bannière Hero Showroom */}
         <div className="mb-8 relative overflow-hidden rounded-2xl border border-brand-border/60 shadow-luxury-lg">
           <div className="relative w-full h-[340px] sm:h-[440px] md:h-[520px] lg:h-[580px] overflow-hidden">
             <Image
@@ -40,35 +182,35 @@ export default function CheckoutForm() {
             <div className="absolute inset-0 bg-gradient-to-t from-[#faf7f2]/60 via-transparent to-transparent"></div>
             <div className="absolute top-5 right-5 flex items-center gap-2 text-xs text-brand-charcoal bg-white/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/70 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-medium tracking-wide">En direct</span>
+              <span className="font-medium tracking-wide">Paiement Direct TikTok</span>
             </div>
             <div className="absolute bottom-0 left-0 p-8 sm:p-12 max-w-xl">
-              <p className="text-[11px] tracking-[0.35em] uppercase text-brand-gold-hover font-semibold">
+              <p className="text-[11px] tracking-[0.35em] uppercase text-brand-gold font-semibold">
                 Showroom privé
               </p>
               <h1 className="mt-3 font-serif text-4xl sm:text-5xl md:text-6xl font-medium text-brand-charcoal leading-[1.05] drop-shadow-[0_1px_14px_rgba(250,247,242,0.95)]">
-                Finalisation de commande
+                Réglez votre commande
               </h1>
               <p className="mt-3 text-sm sm:text-base text-brand-muted drop-shadow-[0_1px_10px_rgba(250,247,242,0.95)]">
-                Paiement sécurisé de votre commande passée en direct.
+                Indiquez le montant convenu avec le vendeur et procédez au paiement sécurisé via Stripe.
               </p>
             </div>
           </div>
         </div>
 
         <nav className="mb-8 flex items-center justify-center sm:justify-start space-x-3 text-xs uppercase tracking-widest text-brand-muted">
-          <span className="text-brand-charcoal font-medium">Panier</span>
+          <span className="text-brand-charcoal font-medium">Panier personnalisé</span>
           <span>/</span>
           <span className="text-brand-gold font-bold">Livraison</span>
           <span>/</span>
-          <span>Confirmation</span>
+          <span>Paiement Stripe</span>
         </nav>
 
         {/* Grid: Left side Form & Right side Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <form onSubmit={handlePay} className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           {/* ======================= LEFT COLUMN: Forms ======================= */}
           <div className="lg:col-span-7 space-y-8">
-            {/* Section 1: Montant & référence */}
+            {/* Section 1: Montant personnalisé & référence */}
             <section
               className="bg-white/95 rounded-2xl p-6 sm:p-8 shadow-luxury border border-brand-border/70 backdrop-blur-sm"
               data-purpose="order-details-section"
@@ -79,63 +221,120 @@ export default function CheckoutForm() {
                     1
                   </span>
                   <h2 className="font-serif text-2xl md:text-3xl font-medium tracking-tight text-brand-charcoal">
-                    Montant &amp; référence
+                    Montant personnalisé &amp; détails
                   </h2>
                 </div>
                 <span className="text-xs uppercase text-brand-gold font-semibold tracking-wider">
                   Étape 1/3
                 </span>
               </div>
+
               <div className="grid grid-cols-1 gap-5">
                 <div>
-                  <label
-                    className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                    htmlFor="montant-field"
-                  >
-                    Montant convenu en direct{" "}
-                    <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <label
+                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal"
+                      htmlFor="montant-field"
+                    >
+                      Montant convenu à régler au vendeur{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-brand-muted">
+                      Montant libre (ex: 45 €)
+                    </span>
+                  </div>
+
                   <div className="relative rounded-xl shadow-sm">
                     <input
-                      className="lux-input block w-full rounded-xl py-3.5 pl-4 pr-12 text-lg font-medium text-brand-charcoal placeholder-gray-400 focus:border-brand-gold"
+                      className="lux-input block w-full rounded-xl py-4 pl-4 pr-12 text-2xl font-serif font-bold text-brand-charcoal placeholder-gray-400 focus:border-brand-gold"
                       id="montant-field"
-                      min="0"
+                      min="0.50"
                       name="amount"
                       placeholder="0.00"
                       required
                       step="0.01"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={amount}
                       onChange={(event) => setAmount(event.target.value)}
                     />
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
-                      <span className="text-lg font-serif font-bold text-brand-charcoal">
+                      <span className="text-xl font-serif font-bold text-brand-charcoal">
                         €
                       </span>
                     </div>
                   </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] uppercase tracking-wider text-brand-muted font-medium mr-1">
+                      Suggestions :
+                    </span>
+                    {quickAmounts.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setAmount(preset.toFixed(2))}
+                        className={`text-xs px-3 py-1 rounded-lg border transition-all ${
+                          subtotal === preset
+                            ? "bg-brand-charcoal text-white border-brand-charcoal font-semibold shadow-sm"
+                            : "bg-brand-alabaster hover:bg-brand-gold hover:text-white text-brand-charcoal border-brand-border/80"
+                        }`}
+                      >
+                        {preset} €
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label
-                    className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                    htmlFor="order-ref"
-                  >
-                    Référence
-                  </label>
-                  <input
-                    className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
-                    id="order-ref"
-                    name="order_reference"
-                    placeholder="OMD-LIVE-4982"
-                    type="text"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
+                      htmlFor="order-ref"
+                    >
+                      Référence de vente
+                    </label>
+                    <input
+                      className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400 font-mono"
+                      id="order-ref"
+                      name="order_reference"
+                      value={orderReference}
+                      onChange={(e) => setOrderReference(e.target.value)}
+                      placeholder="OMD-LIVE-4982"
+                      type="text"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
+                      htmlFor="tiktok-user"
+                    >
+                      Pseudo TikTok <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative rounded-xl">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-brand-muted font-medium text-sm">
+                        @
+                      </div>
+                      <input
+                        className="lux-input block w-full rounded-xl py-3 pl-9 pr-4 text-sm text-brand-charcoal placeholder-gray-400"
+                        id="tiktok-user"
+                        name="tiktok_username"
+                        value={tiktokUsername}
+                        onChange={(e) => setTiktokUsername(e.target.value)}
+                        placeholder="votre_pseudo"
+                        type="text"
+                      />
+                    </div>
+                  </div>
                 </div>
+
                 <div>
                   <label
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="order-item"
                   >
-                    Article{" "}
+                    Description de l&apos;article{" "}
                     <span className="text-brand-muted font-normal lowercase">
                       (facultatif)
                     </span>
@@ -144,30 +343,11 @@ export default function CheckoutForm() {
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="order-item"
                     name="article_name"
-                    placeholder="Robe de soirée dorée — M"
+                    value={articleName}
+                    onChange={(e) => setArticleName(e.target.value)}
+                    placeholder="Ex: Robe soirée satin dorée — Taille M"
                     type="text"
                   />
-                </div>
-                <div>
-                  <label
-                    className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                    htmlFor="tiktok-user"
-                  >
-                    Pseudo TikTok <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative rounded-xl">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-brand-muted font-medium text-sm">
-                      @
-                    </div>
-                    <input
-                      className="lux-input block w-full rounded-xl py-3 pl-9 pr-4 text-sm text-brand-charcoal placeholder-gray-400"
-                      id="tiktok-user"
-                      name="tiktok_username"
-                      placeholder="votre_pseudo"
-                      required
-                      type="text"
-                    />
-                  </div>
                 </div>
               </div>
             </section>
@@ -196,14 +376,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="email-addr"
                   >
-                    E-mail <span className="text-red-500">*</span>
+                    E-mail pour le reçu de paiement
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="email-addr"
                     name="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="nom@exemple.com"
-                    required
                     type="email"
                   />
                 </div>
@@ -212,14 +393,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="first-name"
                   >
-                    Prénom <span className="text-red-500">*</span>
+                    Prénom
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="first-name"
                     name="firstname"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
                     placeholder="Camille"
-                    required
                     type="text"
                   />
                 </div>
@@ -228,14 +410,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="last-name"
                   >
-                    Nom <span className="text-red-500">*</span>
+                    Nom
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="last-name"
                     name="lastname"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
                     placeholder="Laurent"
-                    required
                     type="text"
                   />
                 </div>
@@ -244,13 +427,14 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="country"
                   >
-                    Pays <span className="text-red-500">*</span>
+                    Pays
                   </label>
                   <select
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal cursor-pointer"
                     id="country"
                     name="country"
-                    defaultValue="FR"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
                   >
                     <option value="FR">France métropolitaine</option>
                     <option value="BE">Belgique</option>
@@ -267,14 +451,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="street-address"
                   >
-                    Adresse <span className="text-red-500">*</span>
+                    Adresse de livraison
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="street-address"
                     name="address1"
+                    value={address1}
+                    onChange={(e) => setAddress1(e.target.value)}
                     placeholder="N° et nom de rue"
-                    required
                     type="text"
                   />
                 </div>
@@ -292,6 +477,8 @@ export default function CheckoutForm() {
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="address2"
                     name="address2"
+                    value={address2}
+                    onChange={(e) => setAddress2(e.target.value)}
                     placeholder="Bâtiment, étage, interphone…"
                     type="text"
                   />
@@ -301,14 +488,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="postal-code"
                   >
-                    Code postal <span className="text-red-500">*</span>
+                    Code postal
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="postal-code"
                     name="zip"
+                    value={zip}
+                    onChange={(e) => setZip(e.target.value)}
                     placeholder="75008"
-                    required
                     type="text"
                   />
                 </div>
@@ -317,14 +505,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="city"
                   >
-                    Ville <span className="text-red-500">*</span>
+                    Ville
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="city"
                     name="city"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
                     placeholder="Paris"
-                    required
                     type="text"
                   />
                 </div>
@@ -333,14 +522,15 @@ export default function CheckoutForm() {
                     className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
                     htmlFor="phone-number"
                   >
-                    Téléphone <span className="text-red-500">*</span>
+                    Téléphone
                   </label>
                   <input
                     className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-brand-charcoal placeholder-gray-400"
                     id="phone-number"
                     name="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
                     placeholder="06 12 34 56 78"
-                    required
                     type="tel"
                   />
                 </div>
@@ -359,15 +549,6 @@ export default function CheckoutForm() {
                 <h2 className="font-serif text-2xl md:text-3xl font-medium tracking-tight text-brand-charcoal">
                   Mode de livraison
                 </h2>
-              </div>
-              <div className="mb-5 bg-[#FAF3E9] border border-[#E9D9C3] rounded-xl p-3.5 sm:p-4 flex items-center gap-3">
-                <span className="text-xl">🚚</span>
-                <p className="text-xs sm:text-sm text-[#7D5E37] font-medium leading-relaxed">
-                  <strong className="font-semibold text-brand-charcoal">
-                    Offre spéciale :
-                  </strong>{" "}
-                  frais de port offerts dès la 2ᵉ commande groupée.
-                </p>
               </div>
               <div className="relative border-2 border-brand-gold/80 bg-brand-cream/40 rounded-xl p-4 sm:p-5 flex flex-col gap-4 shadow-sm">
                 <div className="flex items-start justify-between">
@@ -388,7 +569,7 @@ export default function CheckoutForm() {
                         Mondial Relay — Point Relais
                       </label>
                       <p className="text-xs text-brand-muted mt-0.5">
-                        3 à 5 jours ouvrés
+                        3 à 5 jours ouvrés avec notification SMS
                       </p>
                     </div>
                   </div>
@@ -398,47 +579,10 @@ export default function CheckoutForm() {
                     </span>
                   </div>
                 </div>
-                <div className="pt-3 border-t border-brand-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border">
-                  <div className="flex items-center gap-2.5">
-                    <svg
-                      className="w-5 h-5 text-brand-gold flex-shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                      ></path>
-                      <path
-                        d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                      ></path>
-                    </svg>
-                    <div>
-                      <div className="text-xs font-semibold text-brand-charcoal">
-                        Point relais automatique
-                      </div>
-                      <div className="text-[11px] text-brand-muted">
-                        Le plus proche · modifiable par SMS
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    className="text-xs font-medium uppercase tracking-wider text-brand-charcoal underline hover:text-brand-gold transition self-start sm:self-auto"
-                    type="button"
-                  >
-                    Changer
-                  </button>
-                </div>
               </div>
             </section>
 
-            {/* Section 4: Paiement */}
+            {/* Section 4: Paiement Sécurisé via Stripe */}
             <section
               className="bg-white/95 rounded-2xl p-6 sm:p-8 border border-brand-border/70 shadow-luxury backdrop-blur-sm"
               data-purpose="payment-section"
@@ -449,10 +593,10 @@ export default function CheckoutForm() {
                     4
                   </span>
                   <h2 className="font-serif text-2xl md:text-3xl font-medium tracking-tight text-brand-charcoal">
-                    Paiement
+                    Paiement Sécurisé
                   </h2>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5 sm:space-x-2">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-gray-100 text-gray-700 border border-gray-200">
                     CB
                   </span>
@@ -467,124 +611,52 @@ export default function CheckoutForm() {
                   </span>
                 </div>
               </div>
+
+              {/* Stripe Info Box */}
               <div className="space-y-4">
-                <div className="flex items-center gap-3 p-3 bg-brand-cream/60 rounded-xl border border-brand-border/60">
-                  <input
-                    defaultChecked
-                    className="h-4 w-4 text-brand-charcoal custom-radio"
-                    id="pay-card"
-                    name="payment_method"
-                    type="radio"
-                  />
-                  <label
-                    className="text-xs sm:text-sm font-semibold text-brand-charcoal flex items-center justify-between w-full cursor-pointer"
-                    htmlFor="pay-card"
-                  >
-                    <span>Carte bancaire</span>
-                    <span className="text-brand-gold text-xs font-normal">
-                      3D Secure
-                    </span>
-                  </label>
-                </div>
-                <div className="space-y-4 pt-2">
-                  <div>
-                    <label
-                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                      htmlFor="card-holder"
-                    >
-                      Nom sur la carte
-                    </label>
-                    <input
-                      className="lux-input block w-full rounded-xl py-3 px-4 text-sm uppercase placeholder-gray-400"
-                      id="card-holder"
-                      name="cardholder"
-                      placeholder="MME CAMILLE LAURENT"
-                      type="text"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                      htmlFor="card-num"
-                    >
-                      Numéro de carte
-                    </label>
-                    <div className="relative">
-                      <input
-                        className="lux-input block w-full rounded-xl py-3 pl-4 pr-11 text-sm tracking-widest placeholder-gray-400 font-mono"
-                        id="card-num"
-                        inputMode="numeric"
-                        maxLength={19}
-                        name="cardnumber"
-                        placeholder="4970 •••• •••• ••••"
-                        type="text"
-                      />
-                      <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                        <svg
-                          className="h-5 w-5 text-gray-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <rect
-                            height="14"
-                            rx="2"
-                            strokeWidth="1.8"
-                            width="20"
-                            x="2"
-                            y="5"
-                          ></rect>
-                          <path
-                            d="M2 10h20"
-                            strokeLinecap="round"
-                            strokeWidth="1.8"
-                          ></path>
-                        </svg>
-                      </div>
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#FAF8F5] to-[#F5EFE6] border border-brand-border/80">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-9 h-9 rounded-full bg-brand-charcoal text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                      <svg className="w-5 h-5 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-semibold text-sm text-brand-charcoal">
+                        Paiement 100% sécurisé via la page Stripe
+                      </p>
+                      <p className="text-xs text-brand-muted leading-relaxed">
+                        En cliquant sur « Payer », vous serez redirigé vers la page de paiement officielle et cryptée de Stripe pour finaliser votre règlement par Carte Bancaire ou Apple Pay en toute sécurité.
+                      </p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label
-                        className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5"
-                        htmlFor="card-expiry"
-                      >
-                        Expiration
-                      </label>
-                      <input
-                        className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-center placeholder-gray-400"
-                        id="card-expiry"
-                        maxLength={5}
-                        name="expiry"
-                        placeholder="MM / AA"
-                        type="text"
-                      />
+
+                  <div className="mt-4 pt-4 border-t border-brand-border/60 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-brand-charcoal font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span>
+                      <span>Chiffrement AES-256</span>
                     </div>
-                    <div>
-                      <label
-                        className="block text-xs uppercase tracking-wider font-semibold text-brand-charcoal mb-1.5 flex items-center justify-between"
-                        htmlFor="card-cvc"
-                      >
-                        <span>CVC</span>
-                        <span className="text-[10px] text-brand-muted font-normal">
-                          3 chiffres au dos
-                        </span>
-                      </label>
-                      <input
-                        className="lux-input block w-full rounded-xl py-3 px-4 text-sm text-center placeholder-gray-400 font-mono"
-                        id="card-cvc"
-                        maxLength={4}
-                        name="cvc"
-                        placeholder="123"
-                        type="password"
-                      />
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span>
+                      <span>Authentification 3D Secure</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span>
+                      <span>Zéro coordonnée stockée</span>
                     </div>
                   </div>
                 </div>
-                <div className="pt-4 border-t border-brand-border/60">
+
+                <div className="pt-2">
                   <label className="flex items-start gap-3 cursor-pointer select-none">
                     <input
-                      defaultChecked
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
                       className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-charcoal focus:ring-brand-gold custom-radio"
                       id="terms-check"
                       name="terms"
@@ -595,12 +667,39 @@ export default function CheckoutForm() {
                       <a
                         className="underline text-brand-charcoal hover:text-brand-gold"
                         href="#"
+                        onClick={(e) => e.preventDefault()}
                       >
                         conditions générales de vente
-                      </a>
-                      .
+                      </a>{" "}
+                      et confirme le montant convenu avec le vendeur.
                     </span>
                   </label>
+                </div>
+
+                <div className="pt-2 sm:hidden">
+                  <button
+                    disabled={isSubmitting}
+                    onClick={handlePay}
+                    className="w-full bg-[#1F1C1B] hover:bg-brand-gold disabled:bg-gray-400 text-white font-medium text-sm tracking-widest uppercase py-4 px-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer"
+                    type="button"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Redirection vers Stripe...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        <span>{subtotal > 0 ? `Payer • ${formatPrice(total)}` : "Saisir un montant"}</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </section>
@@ -617,14 +716,14 @@ export default function CheckoutForm() {
               </h2>
               <div className="py-5 space-y-3.5 text-sm">
                 <div className="flex items-center justify-between text-brand-muted">
-                  <span>Sous-total</span>
-                  <span className="font-medium text-brand-charcoal">
+                  <span>Montant article convenu</span>
+                  <span className="font-medium text-brand-charcoal text-base">
                     {formatPrice(subtotal)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-brand-muted">
                   <div className="flex items-center gap-1.5">
-                    <span>Livraison</span>
+                    <span>Livraison Point Relais</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-alabaster text-brand-muted border border-brand-border">
                       3-5 j
                     </span>
@@ -633,10 +732,12 @@ export default function CheckoutForm() {
                     {formatPrice(SHIPPING_COST)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-brand-muted text-xs">
-                  <span>TVA incluse (20 %)</span>
-                  <span>{formatPrice(vat)}</span>
-                </div>
+                {subtotal > 0 && (
+                  <div className="flex items-center justify-between text-brand-muted text-xs">
+                    <span>TVA incluse (20 %)</span>
+                    <span>{formatPrice(vat)}</span>
+                  </div>
+                )}
                 <div className="pt-4 border-t border-brand-border/70">
                   <div className="flex items-baseline justify-between">
                     <span className="font-serif text-xl sm:text-2xl font-bold text-brand-charcoal">
@@ -648,28 +749,47 @@ export default function CheckoutForm() {
                   </div>
                 </div>
               </div>
+
+              {/* Checkout Action Button */}
               <div className="mt-4">
                 <button
-                  className="w-full bg-[#1F1C1B] hover:bg-brand-gold text-white font-medium text-sm sm:text-base tracking-widest uppercase py-4 px-6 rounded-xl shadow-lg transition-all duration-300 transform active:scale-[0.99] flex items-center justify-center gap-3 group"
+                  disabled={isSubmitting}
+                  onClick={handlePay}
+                  className="w-full bg-[#1F1C1B] hover:bg-brand-gold disabled:bg-gray-400 text-white font-medium text-sm sm:text-base tracking-widest uppercase py-4 px-6 rounded-xl shadow-lg transition-all duration-300 transform active:scale-[0.99] flex items-center justify-center gap-3 group cursor-pointer"
                   id="btn-submit-payment"
                   type="button"
                 >
-                  <svg
-                    className="w-4 h-4 text-brand-gold group-hover:text-white transition-colors"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                    ></path>
-                  </svg>
-                  <span>Payer • {formatPrice(total)}</span>
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                      </svg>
+                      <span>Redirection Stripe...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-4 h-4 text-brand-gold group-hover:text-white transition-colors"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                        ></path>
+                      </svg>
+                      <span>
+                        {subtotal > 0 ? `Payer • ${formatPrice(total)}` : "Saisir un montant"}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
+
               <div className="mt-6 pt-6 border-t border-brand-border/60 space-y-3.5">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-brand-alabaster flex items-center justify-center text-brand-gold shrink-0">
@@ -688,7 +808,7 @@ export default function CheckoutForm() {
                     </svg>
                   </div>
                   <strong className="text-xs font-semibold text-brand-charcoal">
-                    Paiement sécurisé
+                    Paiement Stripe 100% Garanti
                   </strong>
                 </div>
                 <div className="flex items-center gap-3">
@@ -708,27 +828,7 @@ export default function CheckoutForm() {
                     </svg>
                   </div>
                   <strong className="text-xs font-semibold text-brand-charcoal">
-                    Envoi sous 24–48 h
-                  </strong>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-alabaster flex items-center justify-center text-brand-gold shrink-0">
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                      ></path>
-                    </svg>
-                  </div>
-                  <strong className="text-xs font-semibold text-brand-charcoal">
-                    Service client réactif
+                    Expédition suivie sous 24–48 h
                   </strong>
                 </div>
               </div>
@@ -736,11 +836,19 @@ export default function CheckoutForm() {
 
             {/* Note service client */}
             <div className="bg-brand-pearl/40 rounded-xl p-4 border border-brand-border/60 text-center text-xs text-brand-muted">
-              Une question sur votre commande ? Écrivez-nous sur TikTok.
+              Une question lors de votre live ? Signalez-le en direct à l&apos;animatrice.
             </div>
           </aside>
-        </div>
+        </form>
       </div>
     </main>
+  );
+}
+
+export default function CheckoutForm() {
+  return (
+    <Suspense fallback={<div className="py-24 text-center text-sm text-brand-muted">Chargement...</div>}>
+      <CheckoutFormContent />
+    </Suspense>
   );
 }

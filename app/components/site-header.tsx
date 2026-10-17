@@ -1,13 +1,14 @@
 import Image from "next/image";
+import Link from "next/link";
 
 export default function SiteHeader() {
   return (
     <header className="border-b border-brand-border/50 bg-white/70 backdrop-blur-md sticky top-0 z-40 transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 md:h-28 flex items-center justify-between">
         {/* Retour */}
-        <a
+        <Link
           className="inline-flex items-center gap-2 text-xs md:text-sm font-medium tracking-wider text-brand-charcoal hover:text-brand-gold uppercase transition-colors duration-200"
-          href="#"
+          href="/"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -18,10 +19,10 @@ export default function SiteHeader() {
             ></path>
           </svg>
           <span className="hidden sm:inline">Retour boutique</span>
-        </a>
+        </Link>
 
         {/* Logo */}
-        <a className="block group" href="#">
+        <Link className="block group" href="/">
           <Image
             alt="Oh My Dress Showroom"
             className="h-14 md:h-20 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
@@ -30,24 +31,10 @@ export default function SiteHeader() {
             height={256}
             priority
           />
-        </a>
+        </Link>
 
         {/* Actions */}
         <div className="flex items-center gap-4">
-          <a
-            className="hidden md:inline-flex items-center gap-1.5 text-xs tracking-wider uppercase font-medium bg-brand-charcoal text-white hover:bg-brand-gold px-3.5 py-1.5 rounded-full transition-all"
-            href="#"
-          >
-            <span>Mes commandes</span>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M9 5l7 7-7 7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-              ></path>
-            </svg>
-          </a>
           <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50/90 border border-emerald-200/60 px-2.5 py-1 rounded-full">
             <svg className="w-3.5 h-3.5 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
               <path
@@ -57,7 +44,7 @@ export default function SiteHeader() {
               ></path>
             </svg>
             <span className="text-[11px] uppercase tracking-wider font-semibold">
-              Sécurisé
+              Paiement Sécurisé
             </span>
           </div>
         </div>
