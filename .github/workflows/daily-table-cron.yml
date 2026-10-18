@@ -1,0 +1,43 @@
+name: Daily Table Print
+
+'on':
+  schedule:
+    # Runs daily at 9:00 PM UTC (21:00 UTC)
+    # GitHub Action crons run in UTC. To match your local timezone:
+    # - 9:00 PM UTC: '0 21 * * *'
+    # - 9:00 PM Paris (CET, UTC+1): '0 20 * * *'
+    # - 9:00 PM Paris (CEST, UTC+2): '0 19 * * *'
+    # - 9:00 PM PKT (UTC+5): '0 16 * * *'
+    - cron: '0 21 * * *'
+
+  # Allows manual triggering directly from GitHub Actions tab for testing
+  workflow_dispatch:
+
+jobs:
+  print-table:
+    name: Print First 5 Rows
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute script to print table
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          TABLE_NAME: 'payments'
+          ROW_LIMIT: '5'
+        run: |
+          python scripts/print_table.py --limit 5
