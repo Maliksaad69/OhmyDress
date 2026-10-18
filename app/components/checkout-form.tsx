@@ -159,11 +159,16 @@ function CheckoutFormContent() {
   const searchParams = useSearchParams();
   const wasCanceled = searchParams.get("canceled") === "true";
 
+  const initialRef = searchParams.get("ref") || searchParams.get("order") || "";
+  const initialAmount = searchParams.get("amount") || "";
+  const initialArticle = searchParams.get("article") || "";
+  const initialTiktok = searchParams.get("tiktok") || "";
+
   // Form State
-  const [amount, setAmount] = useState("");
-  const [orderReference, setOrderReference] = useState("OMD-LIVE-4982");
-  const [articleName, setArticleName] = useState("");
-  const [tiktokUsername, setTiktokUsername] = useState("");
+  const [amount, setAmount] = useState(initialAmount);
+  const [orderReference, setOrderReference] = useState(initialRef);
+  const [articleName, setArticleName] = useState(initialArticle);
+  const [tiktokUsername, setTiktokUsername] = useState(initialTiktok);
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -521,7 +526,7 @@ function CheckoutFormContent() {
                         handleFieldChange("orderReference", e.target.value);
                       }}
                       onBlur={() => handleFieldBlur("orderReference", orderReference)}
-                      placeholder="OMD-LIVE-4982"
+                      placeholder="Ex : OMD-001 ou Réf live"
                       type="text"
                     />
                     <FieldError id="order-ref-error" message={errors.orderReference} />

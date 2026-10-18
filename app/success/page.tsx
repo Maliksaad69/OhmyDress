@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { stripe } from "@/lib/stripe";
+import { sendPaymentAlert } from "@/lib/emailjs";
+import { updateSupabasePaymentStatus } from "@/lib/supabase";
 import AnnouncementBar from "@/app/components/announcement-bar";
 import SiteHeader from "@/app/components/site-header";
 import SiteFooter from "@/app/components/site-footer";
@@ -27,6 +29,26 @@ async function SuccessContent({ searchParams }: SuccessPageProps) {
   if (session_id) {
     try {
       session = await stripe.checkout.sessions.retrieve(session_id);
+
+      // Trigger EmailJS notification alert and update Supabase if paid
+      if (session && session.payment_status === "paid") {
+        sendPaymentAlert(session).catch((err) => {
+          console.error("Erreur lors de l'envoi de l'alerte EmailJS:", err);
+        });
+
+        const paymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent?.id;
+
+        updateSupabasePaymentStatus(session.id, {
+          payment_status: "paid",
+          session_status: session.status || "complete",
+          stripe_payment_intent_id: paymentIntentId,
+          email_alert_sent: true,
+          email_alert_sent_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error("Erreur lors de la récupération de la session Stripe:", err);
     }

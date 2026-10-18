@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 export default function SiteFooter() {
   return (
@@ -19,7 +20,7 @@ export default function SiteFooter() {
             Service client : lundi – vendredi, 9h – 17h
           </div>
         </div>
-        <div className="py-6 flex flex-wrap justify-center md:justify-start gap-x-8 gap-y-3 text-xs tracking-wider uppercase text-brand-muted">
+        <div className="py-6 flex flex-wrap justify-center md:justify-start gap-x-8 gap-y-3 text-xs tracking-wider uppercase text-brand-muted items-center">
           <a className="hover:text-brand-charcoal transition-colors" href="#">
             Mentions légales
           </a>
@@ -35,6 +36,15 @@ export default function SiteFooter() {
           <a className="hover:text-brand-charcoal transition-colors" href="#">
             Contact
           </a>
+          <Link
+            className="text-brand-gold hover:text-brand-charcoal transition-colors font-medium flex items-center gap-1"
+            href="/admin"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <span>Espace Vendeur (Admin)</span>
+          </Link>
         </div>
         <div className="pt-4 flex flex-col sm:flex-row items-center justify-between text-[11px] text-brand-muted border-t border-brand-border/40 gap-2">
           <p>© 2026 Oh My Dress Showroom — Tous droits réservés.</p>

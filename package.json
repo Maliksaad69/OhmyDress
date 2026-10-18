@@ -6,9 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:email": "node scripts/test-email.mjs",
+    "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

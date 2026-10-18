@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
+import { savePaymentToSupabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
@@ -186,6 +187,30 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Persist to Supabase asynchronously (if configured)
+    savePaymentToSupabase({
+      stripe_session_id: session.id,
+      order_reference: orderReference,
+      tiktok_username: tiktokUsername,
+      article_name: articleName,
+      amount,
+      shipping_cost: shippingCost,
+      total_amount: amount + shippingCost,
+      currency: "EUR",
+      payment_status: "unpaid",
+      session_status: "open",
+      customer_name: `${firstName} ${lastName}`.trim(),
+      customer_email: email,
+      customer_phone: phone,
+      shipping_address: `${address1} ${address2}, ${zip} ${city}, ${country}`.replace(/\s+/g, " ").trim(),
+      shipping_address1: address1,
+      shipping_address2: address2,
+      shipping_city: city,
+      shipping_postal_code: zip,
+      shipping_country: country,
+      metadata: (session.metadata || {}) as Record<string, unknown>,
+    }).catch(() => {});
 
     return NextResponse.json({ url: session.url });
   } catch (error: unknown) {
