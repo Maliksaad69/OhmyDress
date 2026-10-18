@@ -1,52 +1,48 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const NOTIFIED_FILE = path.join(DATA_DIR, "notified-sessions.json");
+// In-memory set for fast local lookups within the same process instance
+const memoryNotified = new Set<string>();
 
-function ensureDirectoryExists() {
-  if (!fs.existsSync(DATA_DIR)) {
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    } catch {
-      // Ignore if exists
-    }
-  }
-}
+// Store fallback in os.tmpdir() (/tmp) which is always writable in serverless/Vercel
+const NOTIFIED_FILE = path.join(os.tmpdir(), "omd-notified-sessions.json");
 
 function loadNotifiedSet(): Set<string> {
-  ensureDirectoryExists();
-  if (!fs.existsSync(NOTIFIED_FILE)) {
-    return new Set<string>();
+  if (fs.existsSync(NOTIFIED_FILE)) {
+    try {
+      const raw = fs.readFileSync(NOTIFIED_FILE, "utf-8");
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        for (const id of arr) {
+          if (typeof id === "string") memoryNotified.add(id);
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
   }
-  try {
-    const raw = fs.readFileSync(NOTIFIED_FILE, "utf-8");
-    const arr = JSON.parse(raw);
-    return new Set(Array.isArray(arr) ? arr : []);
-  } catch {
-    return new Set<string>();
-  }
+  return memoryNotified;
 }
 
 function saveNotifiedSet(set: Set<string>) {
-  ensureDirectoryExists();
   try {
     const arr = Array.from(set);
     fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(arr, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Impossible de sauvegarder notified-sessions.json:", err);
+  } catch {
+    // Ignore write errors in serverless
   }
 }
 
 export function hasBeenNotified(sessionId: string): boolean {
   if (!sessionId) return false;
+  if (memoryNotified.has(sessionId)) return true;
   const set = loadNotifiedSet();
   return set.has(sessionId);
 }
 
 export function markAsNotified(sessionId: string): void {
   if (!sessionId) return;
-  const set = loadNotifiedSet();
-  set.add(sessionId);
-  saveNotifiedSet(set);
+  memoryNotified.add(sessionId);
+  saveNotifiedSet(memoryNotified);
 }

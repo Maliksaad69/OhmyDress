@@ -25,35 +25,56 @@ const publicKey = (process.env.EMAILJS_PUBLIC_KEY || process.env.EMAILJS_USER_ID
 const privateKey = (process.env.EMAILJS_PRIVATE_KEY || process.env.EMAILJS_ACCESS_TOKEN)?.trim() || undefined;
 const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL?.trim() || "Wissem95220@icloud.com";
 
+// Optional target email from CLI argument
+const targetEmail = process.argv[2] || adminEmail;
+
 console.log("==========================================");
 console.log("   TEST D'ENVOI D'EMAIL AVEC EMAILJS      ");
 console.log("==========================================");
 console.log(`Service ID  : ${serviceId ? serviceId : "❌ MANQUANT"}`);
 console.log(`Template ID : ${templateId ? templateId : "❌ MANQUANT"}`);
 console.log(`Public Key  : ${publicKey ? publicKey.slice(0, 5) + "..." : "❌ MANQUANT"}`);
-console.log(`Destinataire: ${adminEmail}`);
+console.log(`Destinataire: ${targetEmail}`);
 console.log("------------------------------------------");
 
 if (!serviceId || !templateId || !publicKey) {
-  console.error("\n❌ ERREUR : Les clés EmailJS ne sont pas encore configurées dans votre fichier .env");
-  console.log("Veuillez renseigner dans le fichier .env :");
-  console.log("EMAILJS_SERVICE_ID=service_xxxxxxx");
-  console.log("EMAILJS_TEMPLATE_ID=template_xxxxxxx");
-  console.log("EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxxxx");
-  console.log("ADMIN_NOTIFICATION_EMAIL=" + adminEmail);
+  console.error("\n❌ ERREUR : Les clés EmailJS ne sont pas configurées dans votre fichier .env");
   process.exit(1);
 }
+
+const testOrderRef = "OMD-TEST-" + Math.floor(1000 + Math.random() * 9000);
+const dateStr = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+const customerMessage = `
+Bonjour Wissem El Mhamedi,
+
+Votre commande a été confirmée avec succès ! Nous vous remercions pour votre achat lors de notre live TikTok Showroom.
+
+RÉCAPITULATIF DE VOTRE COMMANDE :
+• Référence : ${testOrderRef}
+• Date : ${dateStr}
+• Pseudo TikTok : @wissem.live
+• Article : Robe de Soirée Satin Doré - Showroom Live
+• Montant article : 79,00 €
+• Frais de port (Mondial Relay) : 5,00 €
+• TOTAL RÉGLÉ : 84,00 €
+
+ADRESSE DE LIVRAISON :
+15 Rue de la Paix, 75002 Paris, France
+
+Votre colis est en cours de préparation par l'équipe Oh My Dress.
+`.trim();
 
 const payload = {
   service_id: serviceId,
   template_id: templateId,
   user_id: publicKey,
   template_params: {
-    order_reference: "TEST-OMD-" + Math.floor(1000 + Math.random() * 9000),
-    customer_name: "Saad Awan (Test)",
-    customer_email: adminEmail,
+    order_reference: testOrderRef,
+    customer_name: "Wissem El Mhamedi (Test)",
+    customer_email: targetEmail,
     customer_phone: "+33 6 12 34 56 78",
-    tiktok_username: "@saad.live",
+    tiktok_username: "@wissem.live",
     article_name: "Robe de Soirée Satin Doré - Showroom Live",
     amount: "79,00 €",
     shipping_cost: "5,00 €",
@@ -61,18 +82,16 @@ const payload = {
     shipping_address: "15 Rue de la Paix, 75002 Paris, France",
     stripe_session_id: "cs_test_" + Math.random().toString(36).substring(2, 12),
     payment_intent_id: "pi_test_" + Math.random().toString(36).substring(2, 12),
-    date: new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" }),
-    to_email: adminEmail,
+    date: dateStr,
+    to_email: targetEmail,
+    recipient_email: targetEmail,
+    email: targetEmail,
     admin_email: adminEmail,
-    from_name: "Saad Awan (Test)",
-    to_name: "Admin Oh My Dress",
+    from_name: "Oh My Dress Showroom",
+    to_name: "Wissem El Mhamedi",
     reply_to: adminEmail,
-    message: `Nouvelle Commande Live Showroom :
-• Réf: TEST-OMD-8821
-• Client: Wissem (Wissem95220@icloud.com)
-• Article: Robe de Soirée Satin Doré
-• Montant: 84,00 € (dont 5,00 € livraison)
-• Adresse: 15 Rue de la Paix, 75002 Paris`,
+    subject: `Confirmation de votre commande ${testOrderRef} — Oh My Dress`,
+    message: customerMessage,
   },
 };
 
@@ -80,7 +99,7 @@ if (privateKey) {
   payload.accessToken = privateKey;
 }
 
-console.log("\nEnvoi de la requête à l'API EmailJS (https://api.emailjs.com/api/v1.0/email/send)...");
+console.log("\nEnvoi de l'e-mail de confirmation via l'API EmailJS...");
 
 try {
   const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
@@ -94,11 +113,12 @@ try {
   const responseText = await response.text();
 
   if (response.ok) {
-    console.log("✅ SUCCÈS ! L'e-mail de test a été envoyé avec succès à :", adminEmail);
-    console.log("Réponse de l'API EmailJS :", responseText);
+    console.log(`✅ SUCCÈS ! L'e-mail de confirmation a été envoyé avec succès à : ${targetEmail}`);
+    console.log("Statut de l'API EmailJS :", responseText);
   } else {
     console.error(`❌ ÉCHEC (${response.status}) :`, responseText);
   }
 } catch (error) {
   console.error("❌ ERREUR RÉSEAU :", error.message);
 }
+

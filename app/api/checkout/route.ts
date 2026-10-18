@@ -136,6 +136,17 @@ export async function POST(request: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email,
+      payment_intent_data: {
+        receipt_email: email,
+        description: orderReference
+          ? `Commande ${orderReference} - Oh My Dress Live`
+          : "Commande Oh My Dress Showroom",
+        metadata: {
+          order_reference: orderReference,
+          tiktok_username: tiktokUsername,
+          customer_name: `${firstName} ${lastName}`.trim(),
+        },
+      },
       line_items: [
         {
           price_data: {
@@ -188,29 +199,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Persist to Supabase asynchronously (if configured)
-    savePaymentToSupabase({
-      stripe_session_id: session.id,
-      order_reference: orderReference,
-      tiktok_username: tiktokUsername,
-      article_name: articleName,
-      amount,
-      shipping_cost: shippingCost,
-      total_amount: amount + shippingCost,
-      currency: "EUR",
-      payment_status: "unpaid",
-      session_status: "open",
-      customer_name: `${firstName} ${lastName}`.trim(),
-      customer_email: email,
-      customer_phone: phone,
-      shipping_address: `${address1} ${address2}, ${zip} ${city}, ${country}`.replace(/\s+/g, " ").trim(),
-      shipping_address1: address1,
-      shipping_address2: address2,
-      shipping_city: city,
-      shipping_postal_code: zip,
-      shipping_country: country,
-      metadata: (session.metadata || {}) as Record<string, unknown>,
-    }).catch(() => {});
+    // Persist to Supabase with await so serverless doesn't drop the write
+    try {
+      await savePaymentToSupabase({
+        stripe_session_id: session.id,
+        order_reference: orderReference,
+        tiktok_username: tiktokUsername,
+        article_name: articleName,
+        amount,
+        shipping_cost: shippingCost,
+        total_amount: amount + shippingCost,
+        currency: "EUR",
+        payment_status: "unpaid",
+        session_status: "open",
+        customer_name: `${firstName} ${lastName}`.trim(),
+        customer_email: email,
+        customer_phone: phone,
+        shipping_address: `${address1} ${address2}, ${zip} ${city}, ${country}`.replace(/\s+/g, " ").trim(),
+        shipping_address1: address1,
+        shipping_address2: address2,
+        shipping_city: city,
+        shipping_postal_code: zip,
+        shipping_country: country,
+        metadata: (session.metadata || {}) as Record<string, unknown>,
+      });
+    } catch (dbErr) {
+      console.warn("Notice: impossible d'enregistrer la session préliminaire dans Supabase:", dbErr);
+    }
 
     return NextResponse.json({ url: session.url });
   } catch (error: unknown) {

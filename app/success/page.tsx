@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { sendPaymentAlert } from "@/lib/emailjs";
-import { updateSupabasePaymentStatus } from "@/lib/supabase";
+import { syncStripeSessionToSupabase, updateSupabasePaymentStatus } from "@/lib/supabase";
 import AnnouncementBar from "@/app/components/announcement-bar";
 import SiteHeader from "@/app/components/site-header";
 import SiteFooter from "@/app/components/site-footer";
@@ -30,24 +30,42 @@ async function SuccessContent({ searchParams }: SuccessPageProps) {
     try {
       session = await stripe.checkout.sessions.retrieve(session_id);
 
-      // Trigger EmailJS notification alert and update Supabase if paid
+      // Trigger EmailJS confirmation alert and update Supabase if paid
       if (session && session.payment_status === "paid") {
-        sendPaymentAlert(session).catch((err) => {
-          console.error("Erreur lors de l'envoi de l'alerte EmailJS:", err);
-        });
+        // 1. Sync full session data to Supabase (upsert ensures row exists)
+        try {
+          await syncStripeSessionToSupabase(session);
+        } catch (dbErr) {
+          console.warn("Notice Supabase sync in success page:", dbErr);
+        }
 
+        // 2. Await sending confirmation email to customer (and alert to admin)
+        try {
+          const emailRes = await sendPaymentAlert(session);
+          if (emailRes.success && !emailRes.skipped) {
+            console.log("Confirmation email sent successfully:", session.id);
+          }
+        } catch (err) {
+          console.error("Erreur lors de l'envoi de l'alerte EmailJS:", err);
+        }
+
+        // 3. Mark payment status as paid in Supabase
         const paymentIntentId =
           typeof session.payment_intent === "string"
             ? session.payment_intent
             : session.payment_intent?.id;
 
-        updateSupabasePaymentStatus(session.id, {
-          payment_status: "paid",
-          session_status: session.status || "complete",
-          stripe_payment_intent_id: paymentIntentId,
-          email_alert_sent: true,
-          email_alert_sent_at: new Date().toISOString(),
-        }).catch(() => {});
+        try {
+          await updateSupabasePaymentStatus(session.id, {
+            payment_status: "paid",
+            session_status: session.status || "complete",
+            stripe_payment_intent_id: paymentIntentId,
+            email_alert_sent: true,
+            email_alert_sent_at: new Date().toISOString(),
+          });
+        } catch (dbErr) {
+          console.warn("Notice Supabase status update in success page:", dbErr);
+        }
       }
     } catch (err) {
       console.error("Erreur lors de la récupération de la session Stripe:", err);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { sendPaymentAlert } from "@/lib/emailjs";
-import { updateSupabasePaymentStatus } from "@/lib/supabase";
+import { syncStripeSessionToSupabase, updateSupabasePaymentStatus } from "@/lib/supabase";
 import type Stripe from "stripe";
 
 export async function POST(request: NextRequest) {
@@ -33,6 +33,12 @@ export async function POST(request: NextRequest) {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.payment_status === "paid") {
       try {
+        await syncStripeSessionToSupabase(session);
+      } catch (dbErr) {
+        console.error("Erreur sync Supabase webhook:", dbErr);
+      }
+
+      try {
         await sendPaymentAlert(session);
       } catch (err) {
         console.error("Erreur d'envoi webhook EmailJS:", err);
@@ -43,13 +49,17 @@ export async function POST(request: NextRequest) {
           ? session.payment_intent
           : session.payment_intent?.id;
 
-      updateSupabasePaymentStatus(session.id, {
-        payment_status: "paid",
-        session_status: session.status || "complete",
-        stripe_payment_intent_id: paymentIntentId,
-        email_alert_sent: true,
-        email_alert_sent_at: new Date().toISOString(),
-      }).catch(() => {});
+      try {
+        await updateSupabasePaymentStatus(session.id, {
+          payment_status: "paid",
+          session_status: session.status || "complete",
+          stripe_payment_intent_id: paymentIntentId,
+          email_alert_sent: true,
+          email_alert_sent_at: new Date().toISOString(),
+        });
+      } catch (dbErr) {
+        console.error("Erreur mise à jour Supabase webhook:", dbErr);
+      }
     }
   }
 

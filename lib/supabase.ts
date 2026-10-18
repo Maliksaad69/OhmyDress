@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type Stripe from "stripe";
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -259,3 +260,93 @@ export async function clearAllPaymentsFromSupabase(): Promise<{ success: boolean
     return { success: false, error: msg };
   }
 }
+
+/**
+ * Fetch a single payment record by its Stripe session ID.
+ */
+export async function getPaymentBySessionId(
+  stripeSessionId: string
+): Promise<SupabasePaymentRow | null> {
+  const client = getSupabaseClient();
+  if (!client || !stripeSessionId) return null;
+
+  try {
+    const { data, error } = await client
+      .from("payments")
+      .select("*")
+      .eq("stripe_session_id", stripeSessionId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Supabase fetch payment by session ID notice:", error.message);
+      return null;
+    }
+
+    return (data as SupabasePaymentRow) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Synchronize a full Stripe Checkout Session into Supabase payments table.
+ */
+export async function syncStripeSessionToSupabase(
+  session: Stripe.Checkout.Session,
+  extra?: { emailAlertSent?: boolean }
+): Promise<{ success: boolean; error?: string }> {
+  const meta = session.metadata || {};
+  const customerDetails = session.customer_details;
+
+  const totalAmount = session.amount_total ? session.amount_total / 100 : 0;
+  const customAmount = meta.custom_amount
+    ? parseFloat(meta.custom_amount)
+    : totalAmount;
+  const shippingCost = meta.shipping_cost
+    ? parseFloat(meta.shipping_cost)
+    : 5.0;
+
+  const firstName = customerDetails?.name?.split(" ")[0] || "";
+  const lastName = customerDetails?.name?.split(" ").slice(1).join(" ") || "";
+  const address = customerDetails?.address;
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id || null;
+
+  return savePaymentToSupabase({
+    stripe_session_id: session.id,
+    stripe_payment_intent_id: paymentIntentId,
+    order_reference: meta.order_reference || "Réf. inconnue",
+    tiktok_username: meta.tiktok_username || null,
+    article_name: meta.article_name || null,
+    amount: isNaN(customAmount) ? 0 : customAmount,
+    shipping_cost: isNaN(shippingCost) ? 5.0 : shippingCost,
+    total_amount: totalAmount,
+    currency: session.currency ? session.currency.toUpperCase() : "EUR",
+    payment_status: session.payment_status || "unpaid",
+    session_status: session.status || "open",
+    customer_name:
+      meta.customer_name || customerDetails?.name || `${firstName} ${lastName}`.trim() || null,
+    customer_email:
+      meta.customer_email || customerDetails?.email || session.customer_email || null,
+    customer_phone:
+      meta.customer_phone || customerDetails?.phone || null,
+    shipping_address:
+      meta.shipping_address ||
+      (address
+        ? [address.line1, address.line2, address.postal_code, address.city, address.country]
+            .filter(Boolean)
+            .join(", ")
+        : null),
+    shipping_address1: address?.line1 || null,
+    shipping_address2: address?.line2 || null,
+    shipping_city: address?.city || null,
+    shipping_postal_code: address?.postal_code || null,
+    shipping_country: address?.country || "FR",
+    metadata: meta as Record<string, unknown>,
+    email_alert_sent: extra?.emailAlertSent,
+  });
+}
+
