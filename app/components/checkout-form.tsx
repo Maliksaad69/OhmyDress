@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import LoneAlphaBadge from "./lone-alpha-badge";
 
 const SHIPPING_COST = 5.0;
 
@@ -1183,6 +1184,9 @@ function CheckoutFormContent() {
             </div>
           </aside>
         </form>
+
+        {/* Powered by LoneAlpha */}
+        <LoneAlphaBadge className="mt-8 pt-2" />
       </div>
     </main>
   );
